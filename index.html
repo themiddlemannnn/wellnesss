@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mental Health &amp; Neurodivergence Screening — Self-Report Tool (Not a Diagnosis)</title>
+  <meta name="description" content="A single-file, accessible self-screening tool for anxiety, ADHD traits, and autism traits. Not a diagnostic tool — for informational use only." />
+  <style>
+    :root{
+      --bg:#0f1724; --card:#0b1220; --accent:#7dd3fc; --muted:#9ca3af; --glass: rgba(255,255,255,0.03);
+      --success:#16a34a; --danger:#ef4444; --soft:#111827;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:linear-gradient(180deg,#041025 0%, #071228 60%);color:#e6eef8;display:flex;align-items:center;justify-content:center;padding:28px}
+    .app{width:100%;max-width:980px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:12px;padding:22px;box-shadow:0 10px 30px rgba(2,6,23,0.7)}
+    header{display:flex;align-items:center;gap:14px}
+    header h1{font-size:20px;margin:0}
+    header p{margin:0;color:var(--muted);font-size:13px}
+    .meta{display:flex;gap:12px;align-items:center;margin-top:8px}
+    .card{background:var(--glass);padding:14px;border-radius:10px;margin-top:16px}
+    .questions{margin-top:12px}
+    .q{padding:10px;border-radius:8px;margin:10px 0;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);display:flex;gap:10px;align-items:center}
+    .q .text{flex:1}
+    .scale{display:flex;gap:8px}
+    .scale label{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px 10px;border-radius:8px;cursor:pointer}
+    input[type=radio]{display:none}
+    input[type=radio]:checked + label{background:linear-gradient(90deg, rgba(125,211,252,0.12), rgba(125,211,252,0.06));border-color:var(--accent);color:var(--accent)}
+    .controls{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+    button{background:transparent;border:1px solid rgba(255,255,255,0.06);color:inherit;padding:8px 12px;border-radius:8px;cursor:pointer}
+    button.primary{background:linear-gradient(90deg,#0369a1,#7dd3fc);color:#041025;border:none}
+    .progress{height:10px;background:rgba(255,255,255,0.03);border-radius:999px;overflow:hidden;margin-top:14px}
+    .progress > i{display:block;height:100%;background:linear-gradient(90deg,#7dd3fc,#60a5fa);width:0%}
+    .results{margin-top:12px}
+    .result-card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:14px;border-radius:10px}
+    details{margin-top:10px}
+    footer{margin-top:12px;color:var(--muted);font-size:12px}
+    .tag{display:inline-block;padding:6px 8px;border-radius:999px;border:1px solid rgba(255,255,255,0.04);font-size:12px;margin:4px}
+    .warn{color:var(--danger)}
+    .good{color:var(--success)}
+    .small{font-size:13px;color:var(--muted)}
+    @media (max-width:640px){.app{padding:14px}}
+  </style>
+</head>
+<body>
+  <div class="app" role="application" aria-labelledby="appTitle">
+    <header>
+      <div>
+        <h1 id="appTitle">Mental Health &amp; Neurodivergence Self-Screening Tool</h1>
+        <p>Brief questionnaire to screen for common anxiety presentations and flag possible ADHD/autism traits. Not a diagnosis — see the disclaimer below.</p>
+      </div>
+    </header>
+
+    <section class="card" aria-label="Instructions">
+      <strong>How to use</strong>
+      <p class="small">Answer each question based on how you have felt and behaved in the <strong>past 2 weeks</strong> (unless a question asks about a different timeframe). Choose the option that best fits your experience. This tool gives an educational screening result and suggestions for next steps — it is <strong>not</strong> a medical diagnosis.</p>
+      <div class="meta">
+        <div class="tag">Timeframe: last 2 weeks</div>
+        <div class="tag">Format: self-report</div>
+      </div>
+    </section>
+
+    <form id="survey" class="card" aria-live="polite">
+      <div class="progress" aria-hidden="true"><i id="progressBar"></i></div>
+      <div id="questionContainer" class="questions"></div>
+
+      <div class="controls">
+        <button type="button" id="prevBtn" aria-label="Previous question">◀ Previous</button>
+        <button type="button" id="nextBtn" class="primary" aria-label="Next question">Next ▶</button>
+      </div>
+    </form>
+
+    <section id="results" class="results" aria-live="polite"></section>
+
+    <footer>
+      <div class="small">Disclaimer: This tool is for informational and educational purposes only. It cannot provide a diagnosis. If you are in crisis, feeling unsafe, or having thoughts of harming yourself or others, contact emergency services immediately or your local crisis line.</div>
+    </footer>
+  </div>
+
+  <script>
+    // QUESTIONS: each question has: id, text, category, weight direction (higher = more symptom), timeframeNote optional
+    // Categories: general_anxiety, social_anxiety, panic, ocd, adhd, autism_traits, depression (for comorbidity flag)
+
+    const QUESTIONS = [
+      {id:'q1',text:'I have been feeling nervous, anxious, or on edge.',cat:'general_anxiety'},
+      {id:'q2',text:'I have had difficulty controlling worrying (it feels hard to stop worrying).',cat:'general_anxiety'},
+      {id:'q3',text:'I have felt restless or keyed up (unable to relax).',cat:'general_anxiety'},
+      {id:'q4',text:'My worries have interfered with my daily activities (work, school, relationships).',cat:'general_anxiety'},
+      {id:'q5',text:'I avoid social situations because I fear embarrassment, judgment, or being scrutinized.',cat:'social_anxiety'},
+      {id:'q6',text:'I feel very anxious when I have to speak or perform in front of others.',cat:'social_anxiety'},
+      {id:'q7',text:'I have experienced sudden intense fear or discomfort (a panic attack) with symptoms like heart pounding, sweating, trembling, shortness of breath.',cat:'panic'},
+      {id:'q8',text:'I worry a lot about having more panic attacks and it affects my behavior (e.g., avoiding places).',cat:'panic'},
+      {id:'q9',text:'I have recurring, unwanted thoughts or urges that feel distressing and I sometimes perform repetitive behaviors to reduce the distress (compulsions).',cat:'ocd'},
+      {id:'q10',text:'I have trouble concentrating, frequently forget things, or get easily distracted.',cat:'adhd'},
+      {id:'q11',text:'I often have difficulty finishing tasks, following through on instructions, or organizing work.',cat:'adhd'},
+      {id:'q12',text:'I prefer routines and can become very distressed when routines change.',cat:'autism_traits'},
+      {id:'q13',text:'I find it hard to understand others’ non-verbal cues (tone, facial expressions) or to know what others are thinking.',cat:'autism_traits'},
+      {id:'q14',text:'I have felt down, depressed, or hopeless.',cat:'depression'},
+      {id:'q15',text:'My sleep and appetite have been noticeably different (increased or decreased).',cat:'depression'},
+      {id:'q16',text:'I experience physical symptoms (muscle tension, headaches, stomach issues) when anxious.',cat:'general_anxiety'},
+      {id:'q17',text:'I avoid certain places or situations because they might trigger anxiety or panic.',cat:'panic'},
+      {id:'q18',text:'I get preoccupied by routines or details that most people don\'t notice.',cat:'ocd'},
+      {id:'q19',text:'I often move or fidget and feel restless when I am required to sit still.',cat:'adhd'},
+      {id:'q20',text:'I prefer deep focus on special interests and can spend long periods immersed in them.',cat:'autism_traits'}
+    ];
+
+    const OPTIONS = [
+      {value:0,label:'Not at all'},
+      {value:1,label:'Several days'},
+      {value:2,label:'More than half the days'},
+      {value:3,label:'Nearly every day'}
+    ];
+
+    // thresholds for 'possible' flag by category (raw score)
+    const THRESHOLDS = {
+      general_anxiety:6, // of several items total
+      social_anxiety:3,
+      panic:3,
+      ocd:2,
+      adhd:4, // screening threshold: arbitrary for this self-tool
+      autism_traits:3,
+      depression:3
+    };
+
+    // State
+    let answers = {}; // id: value
+    let currentIndex = 0;
+
+    const container = document.getElementById('questionContainer');
+    const progressBar = document.getElementById('progressBar');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const results = document.getElementById('results');
+
+    // Render current question
+    function renderQuestion(idx){
+      container.innerHTML = '';
+      const q = QUESTIONS[idx];
+      const qDiv = document.createElement('div'); qDiv.className='q';
+      const text = document.createElement('div'); text.className='text';
+      text.innerHTML = `<strong>Question ${idx+1} of ${QUESTIONS.length}</strong><div style="margin-top:6px">${q.text}</div>`;
+      qDiv.appendChild(text);
+
+      const scale = document.createElement('div'); scale.className='scale';
+      for(let opt of OPTIONS){
+        const id = `${q.id}_opt_${opt.value}`;
+        const wrapper = document.createElement('div');
+        const input = document.createElement('input'); input.type='radio'; input.name=q.id; input.id=id; input.value=opt.value;
+        if(answers[q.id] !== undefined && String(answers[q.id]) === String(opt.value)) input.checked = true;
+        const label = document.createElement('label'); label.htmlFor=id; label.textContent = opt.label;
+        wrapper.appendChild(input); wrapper.appendChild(label);
+        scale.appendChild(wrapper);
+
+        input.addEventListener('change', ()=>{
+          answers[q.id] = Number(input.value);
+          saveProgress();
+        });
+      }
+
+      qDiv.appendChild(scale);
+      container.appendChild(qDiv);
+
+      // optional timeframe note
+      if(q.timeframeNote){
+        const note = document.createElement('div'); note.className='small'; note.textContent = q.timeframeNote; container.appendChild(note);
+      }
+
+      updateButtons();
+      updateProgress();
+    }
+
+    function updateProgress(){
+      const pct = Math.round((Object.keys(answers).length / QUESTIONS.length) * 100);
+      progressBar.style.width = pct + '%';
+    }
+
+    function updateButtons(){
+      prevBtn.disabled = (currentIndex === 0);
+      nextBtn.textContent = (currentIndex === QUESTIONS.length -1) ? 'Finish ▶' : 'Next ▶';
+    }
+
+    prevBtn.addEventListener('click', ()=>{
+      if(currentIndex>0){ currentIndex--; renderQuestion(currentIndex); }
+    });
+
+    nextBtn.addEventListener('click', ()=>{
+      // if unanswered, warn but allow skipping
+      const q = QUESTIONS[currentIndex];
+      if(answers[q.id] === undefined){
+        if(!confirm('You did not answer this question. Continue without answering?')) return;
+      }
+      if(currentIndex < QUESTIONS.length -1){ currentIndex++; renderQuestion(currentIndex); }
+      else finishSurvey();
+    });
+
+    function saveProgress(){
+      try{ localStorage.setItem('mh_survey_answers_v1', JSON.stringify(answers)); }
+      catch(e){}
+      updateProgress();
+    }
+
+    function loadProgress(){
+      try{ const raw = localStorage.getItem('mh_survey_answers_v1'); if(raw){ answers = JSON.parse(raw);} }
+      catch(e){}
+    }
+
+    function resetSurvey(){
+      if(!confirm('Reset all answers?')) return;
+      answers = {}; currentIndex = 0; localStorage.removeItem('mh_survey_answers_v1'); renderQuestion(0); results.innerHTML='';
+    }
+
+    // Scoring & interpretation
+    function finishSurvey(){
+      // compute category sums
+      const sums = {};
+      for(const q of QUESTIONS){ if(sums[q.cat]===undefined) sums[q.cat]=0; const val = answers[q.id] || 0; sums[q.cat] += val; }
+
+      // produce flags
+      const flags = [];
+      for(const cat in sums){
+        if(THRESHOLDS[cat] !== undefined && sums[cat] >= THRESHOLDS[cat]){
+          flags.push({category:cat,score:sums[cat]});
+        }
+      }
+
+      // Combine logic: if general_anxiety + panic => consider panic disorder features, etc.
+      const explanations = [];
+      if(sums.general_anxiety >= THRESHOLDS.general_anxiety){ explanations.push({title:'Generalized anxiety features',body:'Your responses include several indications of frequent worry, tension, and physical symptoms. This pattern is consistent with generalized anxiety symptoms.'}); }
+      if(sums.social_anxiety >= THRESHOLDS.social_anxiety){ explanations.push({title:'Social anxiety features',body:'Answers suggest anxiety related to social evaluation, public speaking, or performance. Social anxiety disorder can involve marked fear in social situations.'}); }
+      if(sums.panic >= THRESHOLDS.panic){ explanations.push({title:'Panic-related features',body:'You reported episodes that resemble panic attacks and avoidance related to fear of panic. This may warrant evaluation for panic disorder or panic symptoms.'}); }
+      if(sums.ocd >= THRESHOLDS.ocd){ explanations.push({title:'Obsessive/compulsive features',body:'You indicated distressing intrusive thoughts and repetitive behaviors which may reflect obsessive-compulsive features.'}); }
+      if(sums.adhd >= THRESHOLDS.adhd){ explanations.push({title:'Attention / hyperactivity traits (ADHD screening)',body:'You reported concentration difficulties, forgetfulness, or restlessness. These are common in ADHD but can also arise from anxiety, sleep problems, or other issues.'}); }
+      if(sums.autism_traits >= THRESHOLDS.autism_traits){ explanations.push({title:'Autism trait flag (brief screening)',body:'Your answers indicate some preferences for routine, special interests, or differences in social cue processing. This does not mean you have autism, but it may be worth discussing with a clinician if these traits affect your life.'}); }
+      if(sums.depression >= THRESHOLDS.depression){ explanations.push({title:'Low mood / depression features',body:'You reported low mood or changes in sleep/appetite. Depression and anxiety frequently co-occur.'}); }
+
+      // Build result HTML
+      results.innerHTML = '';
+      const header = document.createElement('div'); header.className='result-card';
+      header.innerHTML = `<h3>Screening summary</h3><p class="small">This is an automated, educational screening result based on your answers. It is <strong>not</strong> a diagnosis.</p>`;
+      results.appendChild(header);
+
+      const summaryCard = document.createElement('div'); summaryCard.className='result-card';
+      let html = '<h4>Flags &amp; scores</h4>';
+      html += '<p class="small">Category — score (higher scores indicate more frequent symptoms)</p>';
+      html += '<ul>';
+      for(const cat in sums){ html += `<li><strong>${nice(cat)}</strong>: ${sums[cat]}</li>`; }
+      html += '</ul>';
+      if(explanations.length===0) html += '<p class="good">No strong flags detected: your responses did not reach common screening thresholds. Still, if you feel unwell, seek support.</p>';
+      summaryCard.innerHTML = html;
+      results.appendChild(summaryCard);
+
+      for(const ex of explanations){
+        const card = document.createElement('div'); card.className='result-card';
+        card.innerHTML = `<h4>${ex.title}</h4><p>${ex.body}</p>`;
+        // tailored advice
+        const adv = document.createElement('div'); adv.className='small';
+        adv.innerHTML = tailoredAdvice(ex.title);
+        card.appendChild(adv);
+        results.appendChild(card);
+      }
+
+      // recommendations
+      const rec = document.createElement('div'); rec.className='result-card';
+      rec.innerHTML = `<h4>Next steps &amp; resources</h4>
+        <ul>
+          <li>If you are in immediate danger or crisis, contact emergency services now.</li>
+          <li>Consider sharing this result with a trusted clinician (GP, psychiatrist, psychologist, or local mental health service) for a formal assessment.</li>
+          <li>Self-help strategies that often help short-term: structured sleep, gentle exercise, controlled breathing (box breathing), limiting caffeine, and scheduling worry time.</li>
+          <li>For ADHD/autism traits: a neurodevelopmental assessment can clarify whether traits reflect ADHD/autism or overlap with anxiety/depression.</li>
+        </ul>
+        <p class="small">Helpful starting resources (search online for local services): WHO, NHS mental health pages, national crisis lines, and local health services. This tool does not replace professional assessment.</p>
+        <div style="margin-top:8px"><button id="downloadReport">Download report (text)</button> <button id="resetSurvey">Start over</button></div>
+      `;
+      results.appendChild(rec);
+
+      document.getElementById('downloadReport').addEventListener('click', ()=>downloadReport(sums,explanations));
+      document.getElementById('resetSurvey').addEventListener('click', resetSurvey);
+
+      // save timestamped copy
+      try{ localStorage.setItem('mh_survey_last_result_v1', JSON.stringify({timestamp: new Date().toISOString(), answers, sums, explanations})); }
+      catch(e){}
+
+      // Accessibility: focus results
+      results.scrollIntoView({behavior:'smooth'});
+    }
+
+    function downloadReport(sums, explanations){
+      const parts = [];
+      parts.push('Mental Health Self-Screening Report');
+      parts.push('Generated: ' + new Date().toString());
+      parts.push('\nScores:');
+      for(const k in sums) parts.push(` - ${nice(k)}: ${sums[k]}`);
+      parts.push('\nFlags:');
+      if(explanations.length===0) parts.push(' - No strong flags detected.');
+      else for(const e of explanations) parts.push(` - ${e.title}: ${e.body}`);
+      parts.push('\nAnswers:');
+      for(const q of QUESTIONS){ parts.push(` - ${q.text} => ${answers[q.id] !== undefined ? OPTIONS[answers[q.id]].label : 'No answer'}`); }
+      parts.push('\nDisclaimer: This is an educational screening tool and not a diagnosis. See a qualified professional for evaluation.');
+
+      const blob = new Blob([parts.join('\n')],{type:'text/plain;charset=utf-8'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'mh_selfscreen_report.txt'; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function tailoredAdvice(title){
+      if(title.includes('Generalized')){
+        return 'Consider brief CBT techniques, worry scheduling, and relaxation practices. If symptoms are persistent and cause impairment, consult a mental health professional.';
+      }
+      if(title.includes('Social')){
+        return 'Gradual exposure (small steps), social skills practice, and cognitive reframing can help. Speak with a therapist experienced in social anxiety.';
+      }
+      if(title.includes('Panic')){
+        return 'Learning about panic, breathing techniques, and exposure to feared sensations often help. Severe or frequent panic attacks merit professional assessment.';
+      }
+      if(title.includes('Obsessive')){
+        return 'Evidence-based treatment for OCD includes CBT with exposure & response prevention. Contact a clinician if intrusive thoughts and rituals are causing distress.';
+      }
+      if(title.includes('Attention')){
+        return 'Consider an ADHD assessment if attention/hyperactivity cause impairment. Rule out sleep, medication, or anxiety causes first.';
+      }
+      if(title.includes('Autism')){
+        return 'If social communication differences or restricted interests impact daily life, a neurodevelopmental assessment with a psychologist or psychiatrist can clarify things.';
+      }
+      return '';
+    }
+
+    function nice(cat){
+      return {
+        general_anxiety:'General anxiety', social_anxiety:'Social anxiety', panic:'Panic-related', ocd:'Obsessive/compulsive features', adhd:'Attention/hyperactivity traits', autism_traits:'Autism traits', depression:'Depression'
+      }[cat] || cat;
+    }
+
+    // Initial load
+    (function init(){
+      loadProgress();
+      // ensure any previously saved answers map to current questions
+      renderQuestion(currentIndex);
+      // attach keyboard navigation
+      document.addEventListener('keydown', (e)=>{
+        if(e.key==='ArrowRight') nextBtn.click();
+        if(e.key==='ArrowLeft') prevBtn.click();
+      });
+    })();
+
+    // Accessibility: announce when leaving page without finishing
+    window.addEventListener('beforeunload', function (e) {
+      if(Object.keys(answers).length>0){ /* allow navigation but warn in browser */
+        e.preventDefault(); e.returnValue = '';
+      }
+    });
+  </script>
+</body>
+</html>
